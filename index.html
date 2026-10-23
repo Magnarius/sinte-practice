@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Синте — отработка</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;600&display=swap">
+<style>
+/* Одна колонка: видео сверху и липкое, под ним кнопки комбинаций и разбор */
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --fg: #1d2421;
+  --muted: #5d6762;
+  --line: #dcdfd9;
+  --accent: #0f6b5c;
+  --accent-fg: #ffffff;
+  --display: "Unbounded", "Arial Black", sans-serif;
+  --body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121614; --surface: #1b211e; --fg: #e8ece9; --muted: #9aa59f;
+    --line: #2c3430; --accent: #4fc2a9; --accent-fg: #0c1311; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font: 16px/1.55 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 760px; margin: 0 auto; padding-block: 16px 48px; display: grid; gap: 16px; }
+h1 { font: 700 1.5rem/1.15 var(--display); margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); font-size: .9rem; margin: 4px 0 0; }
+.sub a { color: inherit; }
+
+.player {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: 8px;
+  display: grid; gap: 8px;
+}
+.frame { position: relative; aspect-ratio: 16 / 9; max-width: 100%; background: #000; border-radius: 6px; overflow: hidden; }
+.frame.mirror #yt { transform: scaleX(-1); }
+#yt { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.group { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+button {
+  font: 600 .85rem/1 var(--body); color: var(--fg); background: var(--surface);
+  border: 0; padding: 10px 12px; cursor: pointer; min-height: 40px;
+}
+.group button + button { border-left: 1px solid var(--line); }
+button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.now { font-size: .85rem; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.segs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.seg {
+  text-align: left; border: 1px solid var(--line); border-radius: 6px;
+  display: grid; gap: 4px; padding: 10px 12px; line-height: 1.2;
+}
+.seg small { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.seg[aria-pressed="true"] small { color: inherit; opacity: .85; }
+
+.notes { min-width: 0; }
+.notes h2 { font: 700 1.1rem/1.25 var(--display); margin: 8px 0; }
+.notes h3 { font-size: 1rem; margin: 16px 0 4px; }
+.notes p, .notes li { max-width: 65ch; }
+.notes ul, .notes ol { padding-left: 1.2em; }
+.notes table { border-collapse: collapse; font-size: .9rem; }
+.notes th, .notes td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.tablewrap { overflow-x: auto; }
+.notes hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+.err { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Синте</h1>
+    <p class="sub">Отработка по комбинациям. Видео: <a href="https://youtu.be/K9cPJsou6_c" target="_blank" rel="noopener">West African Dance — Sinte, Bianca Melidor</a></p>
+  </header>
+
+  <section class="player">
+    <div class="frame" id="frame"><div id="yt"></div></div>
+    <div class="controls">
+      <div class="group" role="group" aria-label="Скорость">
+        <button data-rate="0.5">0,5×</button>
+        <button data-rate="0.75">0,75×</button>
+        <button data-rate="1" aria-pressed="true">1×</button>
+      </div>
+      <div class="group">
+        <button id="mirror" aria-pressed="false">Зеркало</button>
+        <button id="loop" aria-pressed="true">Повтор</button>
+      </div>
+      <span class="now" id="now"></span>
+    </div>
+  </section>
+
+  <nav class="segs" id="segs" aria-label="Комбинации"></nav>
+  <article class="notes" id="notes"><p class="err">Загружаю разбор…</p></article>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script>
+const VIDEO = 'K9cPJsou6_c';
+// n — номер раздела «## n.» в razbor.md; all — весь танец с картой
+const SEGS = [
+  { id: 'all', title: 'Весь танец', start: 0, end: 106 },
+  { id: '0', title: 'Вступление', start: 0, end: 5 },
+  { id: '1', title: 'Крылья', start: 4.5, end: 16.5 },
+  { id: '2', title: 'Проход', start: 16.5, end: 24.5 },
+  { id: '3', title: 'Бросок и колено', start: 24.5, end: 39.5 },
+  { id: '4', title: 'Волна', start: 39, end: 65.5 },
+  { id: '5', title: 'Низкий присед', start: 69.5, end: 77.5 },
+  { id: '6', title: 'Ладони', start: 80.5, end: 95.5 },
+  { id: '7', title: 'Финал', start: 99, end: 106 },
+];
+
+const fmt = s => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
+let player, ready = false, cur = SEGS[0], loop = true, rate = 1;
+let sections = {};
+
+const segsEl = document.getElementById('segs');
+for (const s of SEGS) {
+  const b = document.createElement('button');
+  b.className = 'seg'; b.dataset.id = s.id; b.setAttribute('aria-pressed', 'false');
+  b.innerHTML = `<span>${s.id === 'all' ? '' : s.id + '. '}${s.title}</span><small>${fmt(s.start)}–${fmt(s.end)}</small>`;
+  b.onclick = () => select(s, true);
+  segsEl.append(b);
+}
+
+function select(s, play) {
+  cur = s;
+  for (const b of segsEl.children) b.setAttribute('aria-pressed', String(b.dataset.id === s.id));
+  renderNotes();
+  store.set('sinte-seg', s.id);
+  if (ready) {
+    player.seekTo(s.start, true);
+    if (play) player.playVideo();
+  }
+}
+
+function renderNotes() {
+  const el = document.getElementById('notes');
+  const md = sections[cur.id];
+  if (!md) return;
+  el.innerHTML = marked.parse(md);
+  for (const t of el.querySelectorAll('table')) {
+    const w = document.createElement('div'); w.className = 'tablewrap';
+    t.replaceWith(w); w.append(t);
+  }
+}
+
+// razbor.md: шапка до первого «## n.» — карта танца, дальше разделы по номерам
+fetch('razbor.md').then(r => r.text()).then(md => {
+  const parts = md.split(/^(?=## \d+\.)/m);
+  sections.all = parts[0];
+  for (const p of parts.slice(1)) sections[p.match(/^## (\d+)\./)[1]] = p;
+  renderNotes();
+}).catch(() => {
+  document.getElementById('notes').innerHTML = '<p class="err">Разбор не загрузился. Обнови страницу.</p>';
+});
+
+for (const b of document.querySelectorAll('[data-rate]')) {
+  b.onclick = () => {
+    rate = +b.dataset.rate;
+    for (const x of document.querySelectorAll('[data-rate]')) x.setAttribute('aria-pressed', String(x === b));
+    if (ready) player.setPlaybackRate(rate);
+  };
+}
+const mirrorBtn = document.getElementById('mirror');
+mirrorBtn.onclick = () => {
+  const on = mirrorBtn.getAttribute('aria-pressed') !== 'true';
+  mirrorBtn.setAttribute('aria-pressed', String(on));
+  document.getElementById('frame').classList.toggle('mirror', on);
+  store.set('sinte-mirror', on ? '1' : '0');
+};
+const loopBtn = document.getElementById('loop');
+loopBtn.onclick = () => {
+  loop = loopBtn.getAttribute('aria-pressed') !== 'true';
+  loopBtn.setAttribute('aria-pressed', String(loop));
+};
+
+if (store.get('sinte-mirror') === '1') mirrorBtn.click();
+const saved = SEGS.find(s => s.id === store.get('sinte-seg'));
+select(saved || SEGS[0], false);
+
+function onYouTubeIframeAPIReady() {
+  player = new YT.Player('yt', {
+    videoId: VIDEO,
+    playerVars: { start: Math.floor(cur.start), playsinline: 1, rel: 0, modestbranding: 1 },
+    events: {
+      onReady: () => { ready = true; player.seekTo(cur.start, true); player.pauseVideo(); },
+      onStateChange: e => { if (e.data === YT.PlayerState.PLAYING) player.setPlaybackRate(rate); },
+    },
+  });
+}
+
+// цикл: YouTube не умеет повторять отрезок, следим за временем сами
+setInterval(() => {
+  if (!ready) return;
+  const t = player.getCurrentTime();
+  document.getElementById('now').textContent = fmt(t);
+  if (t >= cur.end || t < cur.start - 1) {
+    if (loop) player.seekTo(cur.start, true);
+    else if (t >= cur.end && player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+  }
+}, 200);
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>
